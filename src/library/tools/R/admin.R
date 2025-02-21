@@ -292,10 +292,7 @@ function(dir, outDir)
         stop(gettextf("cannot open directory '%s'", outCodeDir),
              domain = NA)
     outFile <- file.path(outCodeDir, db["Package"])
-    if(!file.create(outFile))
-        stop(gettextf("unable to create '%s'", outFile), domain = NA)
-    writeLines(paste0(".packageName <- \"", db["Package"], "\""),
-               outFile)
+    outLines <- paste0(".packageName <- \"", db["Package"], "\"")
     enc <- as.vector(db["Encoding"])
     need_enc <- !is.na(enc) # Encoding was specified
     testParse <- function(...) { # parse only to detect errors
@@ -306,8 +303,6 @@ function(dir, outDir)
     }
     ## assume that if locale is 'C' we can used 8-bit encodings unchanged.
     if(need_enc && (Sys.getlocale("LC_CTYPE") %notin% c("C", "POSIX"))) {
-        con <- file(outFile, "a")
-        on.exit(close(con))  # Windows does not like files left open
         badfiles <- c()
         for(f in codeFiles) {
             ## We needed more care here: iconv() in macOS 14.1 throws
@@ -341,8 +336,7 @@ function(dir, outDir)
             }
             line1 <- paste0("#line 1 \"", f, "\"")
             testParse(text = c(line1, tmp))
-            writeLines(line1, con)
-            writeLines(tmp, con)
+            outLines <- c(outLines, line1, tmp)
         }
         if(length(badfiles)) {
             validate <- config_val_to_logical(Sys.getenv("_R_CHECK_VALIDATE_UTF8_",
@@ -352,18 +346,15 @@ function(dir, outDir)
             else warning("invalidly encoded .R file(s)",
                          domain = NA, call. = FALSE)
         }
-	close(con); on.exit()
     } else {
-        ## <NOTE>
-        ## It may be safer to do
-        ##   writeLines(sapply(codeFiles, readLines), outFile)
-        ## instead, but this would be much slower ...
-        ## use fast version of file.append that ensures LF between files
-        lapply(codeFiles, testParse)
-        if(!all(.file_append_ensuring_LFs(outFile, codeFiles)))
-            stop("unable to write code files")
-        ## </NOTE>
+        for(f in codeFiles) {
+            line1 <- paste0("#line 1 \"", f, "\"")
+            lines <- readLines(f, warn = FALSE)
+            testParse(text = c(line1, lines))
+            outLines <- c(outLines, line1, lines)
+        }
     }
+    writeLines(outLines, outFile)
     invisible()
 }
 
